@@ -1,0 +1,98 @@
+apiVersion: cr.kanister.io/v1alpha1
+kind: Blueprint
+metadata:
+  name: vault-helm-statefulset
+  namespace: kasten-io
+actions:
+  backup:
+    outputArtifacts:
+      vaultBackup:
+        kopiaSnapshot: '{{ .Phases.dumpToStore.Output.kopiaOutput }}'
+    phases:
+    - func: KubeTask
+      name: dumpToStore
+      objects:
+        vaultSecret:
+          kind: Secret
+          name: 'hashicorp-vault-userpass'
+          namespace: "{{ .Object.metadata.namespace }}"
+      args:
+        namespace: "{{ .Object.metadata.namespace }}"
+        image: kanister-tools/vault:0.1.0
+        command:
+          - sh
+          - -c
+          - |
+            export VAULT_ADDR="https://vault-active:8200"
+            export VAULT_SKIP_VERIFY="true"
+            username='{{ index .Phases.dumpToStore.Secrets.vaultSecret.Data "username" | toString }}'
+            password='{{ index .Phases.dumpToStore.Secrets.vaultSecret.Data "password" | toString }}'
+            backup_file_path="backup.snap"
+
+            vault login -method=userpass username=${username} password=${password}
+            vault operator raft snapshot save ${backup_file_path}
+            cat ${backup_file_path} | base64 --wrap=0 | kando location push --profile '{{ toJson .Profile }}' --path "${backup_file_path}" --output-name "kopiaOutput" -
+  restore:
+    inputArtifactNames:
+      - vaultBackup
+    phases:
+    - func: KubeTask
+      name: restoreFromFile
+      objects:
+        vaultSecret:
+          kind: Secret
+          name: 'hashicorp-vault-userpass'
+          namespace: "{{ .Object.metadata.namespace }}"
+      args:
+        namespace: "{{ .Object.metadata.namespace }}"
+        image: kanister-tools/vault:0.1.0
+        command:
+          - sh
+          - -c
+          - |
+            export VAULT_ADDR="https://vault-active:8200"
+            export VAULT_SKIP_VERIFY="true"
+            username='{{ index .Phases.restoreFromFile.Secrets.vaultSecret.Data "username" | toString }}'
+            password='{{ index .Phases.restoreFromFile.Secrets.vaultSecret.Data "password" | toString }}'
+            kopia_snap='{{ .ArtifactsIn.vaultBackup.KopiaSnapshot }}'
+            backup_file_path="backup.snap"
+
+            kando location pull --profile '{{ toJson .Profile }}' --path "${backup_file_path}" --kopia-snapshot "${kopia_snap}" - | base64 -d --wrap=0 > ${backup_file_path}
+            vault login -method=userpass username=${username} password=${password}
+            vault operator raft snapshot restore ${backup_file_path}
+  delete:
+    inputArtifactNames:
+    - vaultBackup
+    phases:
+    - func: KubeTask
+      name: deleteFromStore
+      args:
+        image: ghcr.io/kanisterio/kanister-tools:latest
+        command:
+        - sh
+        - -c
+        - |
+          backup_file_path="backup.snap"
+          kopia_snap='{{ .ArtifactsIn.vaultBackup.KopiaSnapshot }}'
+          kando location delete --profile '{{ toJson .Profile }}' --path "${backup_file_path}" --kopia-snapshot "${kopia_snap}"
+---
+apiVersion: config.kio.kasten.io/v1alpha1
+kind: BlueprintBinding
+metadata:
+  name: vault-blueprint-binding
+  namespace: kasten-io
+spec:
+  blueprintRef:
+    name: vault-helm-statefulset
+    namespace: kasten-io
+  resources:
+    matchAll:
+      - type:
+          operator: In
+          values:
+            - group: apps
+              resource: statefulsets
+              name: vault
+      - annotations:
+          key: kanister.kasten.io/blueprint
+          operator: DoesNotExist
