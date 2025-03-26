@@ -148,7 +148,7 @@ if [[ $? -eq 2 ]]; then
 fi
 
 echo "Trying to login with Root Token at $VAULT_ADDR..."
-export ROOT_TOKEN=$(bat $INIT_OUT_PATH | sed -n -e 's/^.*Initial Root Token: //p')
+export ROOT_TOKEN=$(cat $INIT_OUT_PATH | sed -n -e 's/^.*Initial Root Token: //p')
 vault login $ROOT_TOKEN
 
 echo "Creating snapshot policy..."
