@@ -8,7 +8,8 @@ export VAULT_INIT_ARGS=""
 export KEY_SHARES="5"
 export KEY_THRESHOLD="3"
 export NAMESPACE="vault"
-
+export CONTEXT=""
+export KUBECTL_ARGS=""
 
 # -----------------------------
 #            Options
@@ -26,6 +27,7 @@ while [[ "$1" =~ ^- && ! "$1" == "--" ]]; do case $1 in
     echo "* -u | --user: Name of user with snapshot permission. *Required"
     echo "* -p | --password: Password of user with snapshot permission. *Required"
     echo "  -n | --namespace: Namespace used to create a Secret with provided username and password. Default is \"$NAMESPACE\""
+    echo "  -c | --context: Kubernetes context used for all kubectl operations. Default is \"$CONTEXT\""
     echo "  -o | --output-file: Path where recovery keys and root token will be stored. Default is \"$INIT_OUT_PATH\""
     echo "  -s | --key-shares: Number of key shares to create. Default is \"$KEY_SHARES\""
     echo "  -t | --key-threshold: Number of key required before vault can be unseald. Default is \"$KEY_THRESHOLD\""
@@ -39,6 +41,11 @@ while [[ "$1" =~ ^- && ! "$1" == "--" ]]; do case $1 in
     ;;
   -n | --namespace )
     shift; NAMESPACE=$1
+    KUBECTL_ARGS="$KUBECTL_ARGS --namespace $NAMESPACE"
+    ;;
+  -c | --context )
+    shift; CONTEXT=$1
+    KUBECTL_ARGS="$KUBECTL_ARGS --context $CONTEXT"
     ;;
   -o | --output-file )
     shift; INIT_OUT_PATH=$1
@@ -98,6 +105,9 @@ echo "Output path for init command: $INIT_OUT_PATH"
 if [[ -n $VAULT_INIT_ARGS ]]; then
   echo "Vault init arguments: $VAULT_INIT_ARGS"
 fi
+if [[ -n $KUBECTL_ARGS ]]; then
+  echo "Kubectl command arguments: $KUBECTL_ARGS"
+fi
 
 
 # TODO echo "Creating Port Forwarding to localhost:8200"
@@ -136,7 +146,7 @@ vault auth enable userpass
 vault write auth/userpass/users/$SNAP_USER token_policies="snapshot" password="$SNAP_PASSWORD"
 
 echo "Creating secret in kubernetes cluster..."
-kubectl delete secret -n $NAMESPACE hashicorp-vault-userpass
-kubectl create secret generic -n $NAMESPACE hashicorp-vault-userpass \
+kubectl delete secret $KUBECTL_ARGS hashicorp-vault-userpass
+kubectl create secret generic $KUBECTL_ARGS hashicorp-vault-userpass \
   --from-literal=username=$SNAP_USER \
   --from-literal=password=$SNAP_PASSWORD
