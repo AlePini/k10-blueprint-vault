@@ -111,13 +111,16 @@ fi
 
 
 # TODO echo "Creating Port Forwarding to localhost:8200"
+kubectl port-forward $KUBECTL_ARGS pods/vault-0 8200:8200 > /dev/null &
+export KUBE_PF_VAULT0=$!
+
 # Now testing if Vault is reachable
-if [[ "$(curl -s -o /dev/null -L --insecure -w ''%{http_code}'' $VAULT_ADDR)" != "200" ]]; then
+if [[ "$(curl -s -o /dev/null -L --insecure --max-time 10 --connect-timeout 5 --retry 5 --retry-connrefused -w ''%{http_code}'' $VAULT_ADDR)" != "200" ]]; then
   echo
   echo "! Vault is not reachable at $VAULT_ADDR"
+  kill $KUBE_PF_VAULT0
   exit 1
 fi
-
 
 # -------------------------------------
 #            Init and Config
@@ -150,3 +153,8 @@ kubectl delete secret $KUBECTL_ARGS hashicorp-vault-userpass
 kubectl create secret generic $KUBECTL_ARGS hashicorp-vault-userpass \
   --from-literal=username=$SNAP_USER \
   --from-literal=password=$SNAP_PASSWORD
+
+# -------------------------
+#            END
+# -------------------------
+kill $KUBE_PF_VAULT0
