@@ -129,6 +129,24 @@ echo "Initializing first Vault at $VAULT_ADDR... (can take few minutes)"
 vault operator init $VAULT_INIT_ARGS > $INIT_OUT_PATH
 cat $INIT_OUT_PATH
 
+vault status
+if [[ $? -eq 2 ]]; then
+  echo "Trying to unseal vault with keys..."
+  for ((i = 1 ; i <= $KEY_THRESHOLD ; i++)); do
+    KEY=$(cat $INIT_OUT_PATH | sed -n -e "s/^.*Unseal Key $i: //p")
+    vault operator unseal $KEY | grep "Unseal Progress"
+  done
+
+  sleep 5
+
+  # Check if is still sealed
+  echo
+  vault status
+  if [[ $? -eq 2 ]]; then echo "!! VAULT STILL NOT UNSEALED"; exit 1; fi
+
+  echo "Remember to unseal other replica pods!"
+fi
+
 echo "Trying to login with Root Token at $VAULT_ADDR..."
 export ROOT_TOKEN=$(bat $INIT_OUT_PATH | sed -n -e 's/^.*Initial Root Token: //p')
 vault login $ROOT_TOKEN
@@ -157,4 +175,6 @@ kubectl create secret generic $KUBECTL_ARGS hashicorp-vault-userpass \
 # -------------------------
 #            END
 # -------------------------
+echo
+echo "Remember to unseal other replica pods!"
 kill $KUBE_PF_VAULT0
