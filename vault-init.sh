@@ -1,5 +1,5 @@
 #!/bin/bash
-version=0.1.0
+version=0.1.1
 
 export VAULT_ADDR="https://127.0.0.1:8200"
 export VAULT_SKIP_VERIFY="true"
